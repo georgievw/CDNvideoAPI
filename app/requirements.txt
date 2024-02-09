@@ -11,4 +11,5 @@ MarkupSafe==2.1.5
 pymongo==4.6.1
 requests==2.31.0
 urllib3==2.2.0
+uWSGI==2.0.24
 Werkzeug==3.0.1

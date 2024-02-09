@@ -1,21 +1,20 @@
-from flask import Flask, request, jsonify, abort, make_response
+from flask import Flask, request, jsonify, abort, make_response, url_for
 from pymongo import MongoClient
-from bson.json_util import dumps 
-import json
+from bson.objectid import ObjectId
 import requests
+import os
 
-DB_NAME = "test_cdn3"
-
+DB_NAME = "dev_cdn"
+API_KEY = os.environ.get("API_KEY")
 GEO_URL = "https://geocode-maps.yandex.ru/1.x"
-LANG = "RU" #TODO
+MONGODB_NAME = "mongo"
+DB_PORT = 27017
 
 app = Flask(__name__)
-client = MongoClient("mongo", 27017)
+client = MongoClient(MONGODB_NAME, DB_PORT)
 db = client[DB_NAME]
-cities = db["cities"]
-cities.create_index({'coords': '2d'})
-
-app.config['JSON_AS_ASCII'] = False
+city_db = db["cities"]
+city_db.create_index({'loc': '2d'})
 
 def get_city_info(city):
 
@@ -26,94 +25,137 @@ def get_city_info(city):
                "lang": "ru_Ru"}
     
     r = requests.get(GEO_URL, params=payload)
-    city_coords = r.json()['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['Point']['pos']
-    
-    city_name = r.json()['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['name'] 
-    
-    return {"name": city_name, "coords": list(map(float, city_coords.split()))}
 
+    content = r.json()
+    if content['response']['GeoObjectCollection']['metaDataProperty']['GeocoderResponseMetaData']['found'] == '0':
+        return {}
+
+    city_loc = content['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['Point']['pos']
+    
+    city_name = content['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['name'] 
+    
+    return {"name": city_name, "loc": list(map(float, city_loc.split()))}
+
+def make_public_city(city):
+    new_city = {}
+    for field in city:
+        if field == '_id':
+            new_city['uri'] = url_for('get_city', city_id=str(city['_id']), _external=True)
+        else:
+            new_city[field] = city[field]
+    return new_city
 
 @app.errorhandler(404)
 def not_found(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
+    return make_response(jsonify({'error': 'Not Found'}), 404)
 
 @app.errorhandler(400)
 def bad_request(error):
-    return make_response(jsonify({'error': 'Bad request'}), 400)
+    return make_response(jsonify({'error': 'Bad Request'}), 400)
 
 @app.errorhandler(405)
 def method_not_allowed(error):
-    return make_response(jsonify({'error': 'Method not allowed'}), 405)
+    return make_response(jsonify({'error': 'Method Not Allowed'}), 405)
 
+@app.errorhandler(415)
+def unsupported_media_type(error):
+    return make_response(jsonify({'error': 'Unsupported Media Type'}), 415)
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    return make_response(jsonify({'error': 'Internal Server Error'}), 500)
 
 @app.route("/api/v1.0/cities", methods=['GET'])
 def get_cities():
-    # city = request.args.get('city')
-    data = cities.find({},{"_id": 0})
-    # return json.loads(dumps(data))
-    # return jsonify(dumps(data))
-    return json.loads(dumps(data))
+    cities = city_db.find()
+    return jsonify({"cities": list(map(make_public_city, cities))})
 
 @app.route("/api/v1.0/cities", methods=['POST'])
-def add_city():
-    if not request.json or not "city" in request.json:
+def post_city():
+    if not request.json or not "name" in request.json:
         abort(400)
-    # city = request.args.get('city')
-    # data = {"city": city, "x": len(city), "y": len(city)+1}
-    city = request.json['city']
 
-    city_info = get_city_info(city)
+    name = request.json["name"]
 
-    data = {"city": city, "answer_city_name": city_info['name'], "coords": city_info['coords']} #loc
-    print(data,type(data))
-    cities.insert_one(data)
-    print(data, type(data))
-    return jsonify({"city": "OK"}), 201
+    if city_db.find_one({"name": name}) is not None:
+        abort(400)
 
-@app.route("/api/v1.0/cities/<string:city_name>", methods=['GET'])
-def get_city(city_name: str):
-    # city = request.args.get('city')
-    city = cities.find_one({"city": city_name}, {"_id": 0})
+    city_info = get_city_info(name)
+
+    if not city_info or name != city_info["name"]:
+        abort(400)
+
+    city = request.json
+    city["loc"] = city_info['loc']
+
+    city_db.insert_one(city)
+    return jsonify({"city": make_public_city(city)}), 201
+
+@app.route("/api/v1.0/cities/<string:city_id>", methods=['GET'])
+def get_city(city_id: str):
+    city = city_db.find_one({"_id": ObjectId(city_id)})
     if city is None:
         abort(404)
-    return json.loads(dumps(city))
+    return jsonify({"city": make_public_city(city)})
 
-@app.route("/api/v1.0/cities/<string:city_name>/nearest", methods=['GET'])
-def get_nearest_cities(city_name: str):
+@app.route("/api/v1.0/cities/<string:city_id>", methods=['PUT'])
+def put_city(city_id: str):
+
+    if not request.json:
+        abort(400)
+
+    city = city_db.find_one({"_id": ObjectId(city_id)})
+    if city is None:
+        abort(404)
+
+    city_db.update_one({"_id": ObjectId(city_id)}, {"$set": request.json})
+    city = city_db.find_one({"_id": ObjectId(city_id)})
+
+    return jsonify({"city": make_public_city(city)}), 200
+
+@app.route("/api/v1.0/cities/<string:city_id>", methods=['DELETE'])
+def delete_city(city_id: str):
+    abort(405) 
+
+@app.route("/api/v1.0/cities/<string:city_id>/nearest", methods=['GET'])
+def get_nearest_cities(city_id: str):
     n = request.args.get('n')
     
-    # print(n, type(n))
-    n = 2 if n is None else int(n)
-    city = cities.find_one({"city": city_name}, {"_id": 0})
+    if n is None:
+        n = 2
+    elif not n.isdigit():
+        abort(400)
+
+    city = city_db.find_one({"_id": ObjectId(city_id)})
     if city is None:
         abort(404)
-    loc = city['coords']
+    loc = city['loc']
 
-    near_cities = cities.find({"coords": {"$near": loc}}).skip(1).limit(n)
+    near_cities = city_db.find({"loc": {"$near": loc}}).skip(1).limit(n)
     if not near_cities:
         abort(404)
-    return json.loads(dumps(near_cities))
+    return jsonify({"cities": list(map(make_public_city, near_cities))})
 
-@app.route("/api/v1.0/cities/<string:city_name>", methods=['PUT'])
-def put_city(city_name: str):
-    # if not request.json or not "city" in request.json:
-        # abort(400)
-
-    city = cities.find_one({"city": city_name})
-    if city is None:
-        abort(404)
-
-    # city = request.args.get('city')
-    # data = {"city": city, "x": len(city), "y": len(city)+1}
-    # data = {"city": city, "coords": get_coords(city)} #loc
+@app.route("/api/v1.0/nearest", methods=['GET'])
+def get_point_nearest_cities():
+    long = request.args.get('long')
+    lat = request.args.get('lat')
+    n = request.args.get('n')
     
-    cities.update_one({"city": city_name}, {"$set": dict(request.json)})
+    if n is None:
+        n = 2
+    elif not n.isdigit():
+        abort(400)
 
-    return jsonify({"city": "OK"}), 201
-
-@app.route("/api/v1.0/cities/<string:city>", methods=['DELETE'])
-def delete_city(city: str):
-    abort(405) 
+    try:
+        float(long), float(lat)
+    except:
+        abort(400)
+    
+    near_cities = city_db.find({"loc": {"$near": [float(long), float(lat)]}}).limit(n)
+    if not near_cities:
+        abort(404)
+    return jsonify({"cities": list(map(make_public_city, near_cities))})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0")

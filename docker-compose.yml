@@ -3,18 +3,16 @@ services:
     build: .
     ports:
       - "5000:5000"
+      - "9090:9090"
+      - "9191:9191"
     environment:
       ENV: DEV
+    env_file:
+      - key.env
     volumes:
       - ./app:/app
-    # links:
-    #   - dnmonster
+    links:
+      - mongo
 
   mongo:
     image: mongo
-    
-  # dnmonster:
-  #   image: amouat/dnmonster:1.0 
-
-  # redis:
-  #   image: redis:3.0
