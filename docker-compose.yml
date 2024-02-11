@@ -1,16 +1,16 @@
 services:
   geoapi:
-    build: .
+    build: geoapi
     ports:
       - "5000:5000"
       - "9090:9090"
       - "9191:9191"
     environment:
-      ENV: DEV
+      ENV: PROD
     env_file:
       - key.env
     volumes:
-      - ./app:/app
+      - ./geoapi:/app
     links:
       - mongo
 

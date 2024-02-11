@@ -1,16 +1,19 @@
 import unittest
 import requests
+from app import create_app
 
 URL = "localhost:9090/api/v1.0"
 
 class TestCase(unittest.TestCase):
 
     def setUp(self):
-        self.tambov = {}
+        self.app = create_app("TEST")
+        self.app_context = self.app.app_context()
+        self.app_context.push()
 
     def test_valid_post(self):
-
-        pass
+        r = print(requests.get(URL))
+        print(r.text)
 
     def test_invalid_post(self):
         pass

@@ -3,8 +3,7 @@ import os
 class Config:
     API_KEY = os.environ.get("API_KEY")
     GEO_URL = "https://geocode-maps.yandex.ru/1.x"
-    # MONGODB_NAME = "mongo"
-    MONGODB_NAME = "localhost"
+    MONGODB_NAME = "mongo"
     DB_PORT = 27017
 
     @staticmethod

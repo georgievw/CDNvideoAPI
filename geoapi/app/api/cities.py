@@ -1,26 +1,8 @@
-from flask import Flask, request, jsonify, abort, make_response, url_for, current_app
+from flask import request, jsonify, abort, url_for, current_app
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 import requests
-import os
-from . import *#api
-
-# DB_NAME = "dev_cdn"
-# API_KEY = os.environ.get("API_KEY")
-# GEO_URL = "https://geocode-maps.yandex.ru/1.x"
-# MONGODB_NAME = "localhost" #"mongo"
-# DB_PORT = 27017
-
-# app = Flask(__name__)
-# app_context = api.app_context()
-# app_context.push()
-
-# client = MongoClient(MONGODB_NAME, DB_PORT)
-# db = client[DB_NAME]
-# city_db = db["cities"]
-# city_db.create_index({'loc': '2d'})
-
-# app_context.pop()
+from . import *
 
 def get_city_info(city):
 
@@ -60,12 +42,12 @@ def init():
     city_db.create_index({'loc': '2d'})
     # pass
 
-@api.route("/api/v1.0/cities", methods=['GET'])
+@api.route("/cities/", methods=['GET'])
 def get_cities():
     cities = city_db.find()
     return jsonify({"cities": list(map(make_public_city, cities))})
 
-@api.route("/api/v1.0/cities", methods=['POST'])
+@api.route("/cities/", methods=['POST'])
 def post_city():
     if not request.json or not "name" in request.json:
         abort(400)
@@ -86,14 +68,14 @@ def post_city():
     city_db.insert_one(city)
     return jsonify({"city": make_public_city(city)}), 201
 
-@api.route("/api/v1.0/cities/<string:city_id>", methods=['GET'])
+@api.route("/cities/<string:city_id>", methods=['GET'])
 def get_city(city_id: str):
     city = city_db.find_one({"_id": ObjectId(city_id)})
     if city is None:
         abort(404)
     return jsonify({"city": make_public_city(city)})
 
-@api.route("/api/v1.0/cities/<string:city_id>", methods=['PUT'])
+@api.route("/cities/<string:city_id>", methods=['PUT'])
 def put_city(city_id: str):
 
     if not request.json:
@@ -108,11 +90,11 @@ def put_city(city_id: str):
 
     return jsonify({"city": make_public_city(city)}), 200
 
-@api.route("/api/v1.0/cities/<string:city_id>", methods=['DELETE'])
+@api.route("/cities/<string:city_id>", methods=['DELETE'])
 def delete_city(city_id: str):
     abort(405) 
 
-@api.route("/api/v1.0/cities/<string:city_id>/nearest", methods=['GET'])
+@api.route("/cities/<string:city_id>/nearest", methods=['GET'])
 def get_nearest_cities(city_id: str):
     n = request.args.get('n')
     
@@ -131,7 +113,7 @@ def get_nearest_cities(city_id: str):
         abort(404)
     return jsonify({"cities": list(map(make_public_city, near_cities))})
 
-@api.route("/api/v1.0/nearest", methods=['GET'])
+@api.route("/nearest", methods=['GET'])
 def get_point_nearest_cities():
     long = request.args.get('long')
     lat = request.args.get('lat')
